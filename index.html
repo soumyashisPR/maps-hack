@@ -3,88 +3,90 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Motion Sensor Test</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 20px;
-        }
-        button {
-            padding: 10px 20px;
-            font-size: 18px;
-            margin-top: 20px;
-        }
-        #output {
-            margin-top: 20px;
-            font-size: 16px;
-            white-space: pre-wrap;
-            text-align: left;
-            display: inline-block;
-            background: #f4f4f4;
-            padding: 15px;
-            border-radius: 10px;
-        }
-    </style>
+    <title>Location & Motion Sensor Test</title>
 </head>
 <body>
-    <h1>Motion & Gyroscope Test</h1>
-    <p>Click the button to enable motion sensors.</p>
-    <button id="enable-sensors">Enable Motion Sensors</button>
-    <div id="output">Waiting for sensor data...</div>
+    <h1>Location & Motion Test</h1>
+    <p id="status">Checking permissions...</p>
+    <p id="location">Location: Not available</p>
+    <div id="sensor-data">Motion Data: Not available</div>
 
     <script>
-        const output = document.getElementById("output");
+        // Function to get user location
+        function getLocation() {
+            if ("geolocation" in navigator) {
+                navigator.geolocation.getCurrentPosition(
+                    (position) => {
+                        document.getElementById("location").innerText = 
+                            `Latitude: ${position.coords.latitude.toFixed(5)}, 
+                            Longitude: ${position.coords.longitude.toFixed(5)}`;
+                    },
+                    (error) => {
+                        document.getElementById("location").innerText = "Location access denied.";
+                        console.error("Location error:", error);
+                    }
+                );
+            } else {
+                document.getElementById("location").innerText = "Geolocation not supported.";
+            }
+        }
 
-        document.getElementById("enable-sensors").addEventListener("click", function() {
+        // Function to request motion permissions
+        function requestMotionPermission() {
             if (typeof DeviceMotionEvent.requestPermission === "function") {
                 DeviceMotionEvent.requestPermission()
-                    .then(response => {
-                        if (response === "granted") {
+                    .then(permissionState => {
+                        if (permissionState === "granted") {
                             startMotionTracking();
+                            document.getElementById("status").innerText = "Motion sensors enabled!";
                         } else {
-                            output.innerText = "Permission denied for motion sensors.";
+                            document.getElementById("status").innerText = "Motion permission denied.";
                         }
                     })
                     .catch(error => {
-                        output.innerText = "Error: " + error;
+                        document.getElementById("status").innerText = "Error: " + error;
                     });
             } else {
-                output.innerText = "Permission API not required on this device.";
                 startMotionTracking();
+                document.getElementById("status").innerText = "Motion sensors active!";
             }
-        });
+        }
 
         function startMotionTracking() {
             window.addEventListener("devicemotion", (event) => {
-                const acc = event.accelerationIncludingGravity;
-                const rotation = event.rotationRate;
-                
-                output.innerText = `
-Acceleration (m/s²):
-X: ${acc.x?.toFixed(2)} 
-Y: ${acc.y?.toFixed(2)} 
-Z: ${acc.z?.toFixed(2)}
-
-Rotation (°/s):
-Alpha: ${rotation.alpha?.toFixed(2)} 
-Beta: ${rotation.beta?.toFixed(2)} 
-Gamma: ${rotation.gamma?.toFixed(2)}
+                document.getElementById("sensor-data").innerText = `
+Acceleration:
+X: ${event.accelerationIncludingGravity.x?.toFixed(2)}
+Y: ${event.accelerationIncludingGravity.y?.toFixed(2)}
+Z: ${event.accelerationIncludingGravity.z?.toFixed(2)}
                 `;
             });
 
             window.addEventListener("deviceorientation", (event) => {
-                output.innerText += `
-
+                document.getElementById("sensor-data").innerText += `
 Orientation:
-Alpha (Z-axis): ${event.alpha?.toFixed(2)}
-Beta (X-axis): ${event.beta?.toFixed(2)}
-Gamma (Y-axis): ${event.gamma?.toFixed(2)}
+Alpha: ${event.alpha?.toFixed(2)}
+Beta: ${event.beta?.toFixed(2)}
+Gamma: ${event.gamma?.toFixed(2)}
                 `;
             });
-
-            output.innerText = "Sensors activated! Move your phone.";
         }
+
+        // Auto-request location on page load
+        window.onload = function () {
+            getLocation(); // Get user location
+
+            if (typeof DeviceMotionEvent.requestPermission === "function") {
+                // iOS requires a button click for motion permission
+                let btn = document.createElement("button");
+                btn.innerText = "Enable Motion Sensors";
+                btn.onclick = requestMotionPermission;
+                document.body.appendChild(btn);
+            } else {
+                // Non-iOS, start motion tracking automatically
+                requestMotionPermission();
+            }
+        };
     </script>
 </body>
 </html>
