@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Motion Sensor Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            font-size: 18px;
+            margin-top: 20px;
+        }
+        #output {
+            margin-top: 20px;
+            font-size: 16px;
+            white-space: pre-wrap;
+            text-align: left;
+            display: inline-block;
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Motion & Gyroscope Test</h1>
+    <p>Click the button to enable motion sensors.</p>
+    <button id="enable-sensors">Enable Motion Sensors</button>
+    <div id="output">Waiting for sensor data...</div>
+
+    <script>
+        const output = document.getElementById("output");
+
+        document.getElementById("enable-sensors").addEventListener("click", function() {
+            if (typeof DeviceMotionEvent.requestPermission === "function") {
+                DeviceMotionEvent.requestPermission()
+                    .then(response => {
+                        if (response === "granted") {
+                            startMotionTracking();
+                        } else {
+                            output.innerText = "Permission denied for motion sensors.";
+                        }
+                    })
+                    .catch(error => {
+                        output.innerText = "Error: " + error;
+                    });
+            } else {
+                output.innerText = "Permission API not required on this device.";
+                startMotionTracking();
+            }
+        });
+
+        function startMotionTracking() {
+            window.addEventListener("devicemotion", (event) => {
+                const acc = event.accelerationIncludingGravity;
+                const rotation = event.rotationRate;
+                
+                output.innerText = `
+Acceleration (m/s²):
+X: ${acc.x?.toFixed(2)} 
+Y: ${acc.y?.toFixed(2)} 
+Z: ${acc.z?.toFixed(2)}
+
+Rotation (°/s):
+Alpha: ${rotation.alpha?.toFixed(2)} 
+Beta: ${rotation.beta?.toFixed(2)} 
+Gamma: ${rotation.gamma?.toFixed(2)}
+                `;
+            });
+
+            window.addEventListener("deviceorientation", (event) => {
+                output.innerText += `
+
+Orientation:
+Alpha (Z-axis): ${event.alpha?.toFixed(2)}
+Beta (X-axis): ${event.beta?.toFixed(2)}
+Gamma (Y-axis): ${event.gamma?.toFixed(2)}
+                `;
+            });
+
+            output.innerText = "Sensors activated! Move your phone.";
+        }
+    </script>
+</body>
+</html>
