@@ -1,92 +1,323 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Location & Motion Sensor Test</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Floor Plan Live Tracking (Auto-Rotating Map)</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      text-align: center;
+      background: #f0f0f0;
+    }
+    h1 {
+      margin: 0.5em 0 0.2em;
+    }
+    #info {
+      margin-bottom: 0.5em;
+      font-size: 0.9em;
+    }
+    #floorCanvas {
+      background: #fff;
+      cursor: crosshair;
+      border: 1px solid #aaa;
+    }
+    #stats {
+      margin: 0.5em 0;
+      font-size: 1em;
+    }
+    button {
+      margin: 0.5em;
+      padding: 0.5em 1em;
+      font-size: 1em;
+      cursor: pointer;
+    }
+    #status {
+      font-weight: bold;
+      color: blue;
+      margin-top: 0.5em;
+    }
+  </style>
 </head>
 <body>
-    <h1>Location & Motion Test</h1>
-    <p id="status">Checking permissions...</p>
-    <p id="location">Location: Not available</p>
-    <div id="sensor-data">Motion Data: Not available</div>
+  <h1>Floor Plan Live Tracking</h1>
+  <div id="info">
+    1) Click on the floor plan to set your <strong>starting position</strong>.<br/>
+    2) Your cursor (arrow) always points upward while the map auto-rotates based on your device's heading (like Google Maps).<br/>
+    3) Steps move you forward along the direction of the arrow.
+  </div>
 
-    <script>
-        // Function to get user location
-        function getLocation() {
-            if ("geolocation" in navigator) {
-                navigator.geolocation.getCurrentPosition(
-                    (position) => {
-                        document.getElementById("location").innerText = 
-                            `Latitude: ${position.coords.latitude.toFixed(5)}, 
-                            Longitude: ${position.coords.longitude.toFixed(5)}`;
-                    },
-                    (error) => {
-                        document.getElementById("location").innerText = "Location access denied.";
-                        console.error("Location error:", error);
-                    }
-                );
-            } else {
-                document.getElementById("location").innerText = "Geolocation not supported.";
-            }
-        }
+  <!-- Canvas for floor plan and live drawing -->
+  <canvas id="floorCanvas" width="900" height="1200"></canvas>
+  
+  <!-- Stats & Controls -->
+  <div id="stats">
+    <p><strong>Steps:</strong> <span id="stepsCount">0</span></p>
+    <p><strong>Sensor Heading:</strong> <span id="headingDeg">0</span>°</p>
+    <p><strong>User Offset (World coords):</strong> 
+      X=<span id="offsetX">0</span>, 
+      Y=<span id="offsetY">0</span>
+    </p>
+    <p><strong>Acceleration (Filtered):</strong> 
+      X=<span id="accX">0</span>, 
+      Y=<span id="accY">0</span>, 
+      Z=<span id="accZ">0</span>
+    </p>
+    <button id="resetBtn">Reset</button>
+    <div id="status">Waiting for sensor data...</div>
+  </div>
 
-        // Function to request motion permissions
-        function requestMotionPermission() {
+  <!-- Kalman filter library for smoothing orientation -->
+  <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
+  <script>
+
+    function requestMotionPermission() {
             if (typeof DeviceMotionEvent.requestPermission === "function") {
                 DeviceMotionEvent.requestPermission()
                     .then(permissionState => {
                         if (permissionState === "granted") {
-                            startMotionTracking();
                             document.getElementById("status").innerText = "Motion sensors enabled!";
                         } else {
-                            document.getElementById("status").innerText = "Motion permission denied.";
+                            document.getElementById("status").innerText = "Permission denied.";
                         }
                     })
                     .catch(error => {
                         document.getElementById("status").innerText = "Error: " + error;
                     });
             } else {
-                startMotionTracking();
+                // Non-iOS devices don't require permission
                 document.getElementById("status").innerText = "Motion sensors active!";
             }
         }
 
-        function startMotionTracking() {
-            window.addEventListener("devicemotion", (event) => {
-                document.getElementById("sensor-data").innerText = `
-Acceleration:
-X: ${event.accelerationIncludingGravity.x?.toFixed(2)}
-Y: ${event.accelerationIncludingGravity.y?.toFixed(2)}
-Z: ${event.accelerationIncludingGravity.z?.toFixed(2)}
-                `;
-            });
-
-            window.addEventListener("deviceorientation", (event) => {
-                document.getElementById("sensor-data").innerText += `
-Orientation:
-Alpha: ${event.alpha?.toFixed(2)}
-Beta: ${event.beta?.toFixed(2)}
-Gamma: ${event.gamma?.toFixed(2)}
-                `;
-            });
-        }
-
-        // Auto-request location on page load
-        window.onload = function () {
-            getLocation(); // Get user location
-
+    // Try auto-request on load
+    window.onload = function () {
             if (typeof DeviceMotionEvent.requestPermission === "function") {
-                // iOS requires a button click for motion permission
+                // iOS requires a user interaction, add a button dynamically
                 let btn = document.createElement("button");
                 btn.innerText = "Enable Motion Sensors";
                 btn.onclick = requestMotionPermission;
                 document.body.appendChild(btn);
             } else {
-                // Non-iOS, start motion tracking automatically
+                // Non-iOS, start motion tracking immediately
                 requestMotionPermission();
             }
         };
-    </script>
+
+    /********************************************************
+     * 1) LOAD THE FLOOR PLAN IMAGE INTO THE CANVAS
+     ********************************************************/
+    const canvas = document.getElementById("floorCanvas");
+    const ctx = canvas.getContext("2d");
+    const floorPlanSrc = "image.png"; // Replace with your floor plan image path.
+    const floorPlan = new Image();
+    floorPlan.src = floorPlanSrc;
+    function drawFloorPlan() {
+      ctx.drawImage(floorPlan, 0, 0, canvas.width, canvas.height);
+    }
+    
+    /********************************************************
+     * 2) GLOBAL VARIABLES
+     ********************************************************/
+    // Sensor heading (in degrees)
+    let heading = 0;
+    const headingKF = new KalmanFilter({ R: 0.01, Q: 3 });
+    
+    // User world coordinates (starting position)
+    let userX = null;
+    let userY = null;
+    
+    // Trajectory in world coordinates
+    let trajectoryPoints = [];
+    
+    // Step detection variables
+    let stepCount = 0;
+    const stepLengthMeters = 0.7;
+    const pixelsPerMeter = 20;
+    let stepThresholdHigh = 2.0;
+    let stepThresholdLow = 1.0;
+    let peakDetected = false;
+    let lastPeakTime = 0;
+    let minStepInterval = 500;
+    
+    // Gravity for high-pass filtering
+    let gravityX = 0, gravityY = 0, gravityZ = 0;
+    const alpha = 0.9;
+    
+    // Stationary detection
+    const motionBufferSize = 20;
+    let motionBuffer = [];
+    let isStationary = true;
+    const stationaryStdDevThreshold = 0.3;
+    
+    function computeStdDev(arr) {
+      if (!arr.length) return 0;
+      const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
+      const variance = arr.reduce((sum, val) => sum + (val - mean) ** 2, 0) / arr.length;
+      return Math.sqrt(variance);
+    }
+    
+    /********************************************************
+     * 3) DRAWING FUNCTIONS
+     ********************************************************/
+    function drawEverything() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // If a starting position is set, we rotate the map so that the fixed arrow remains upward.
+      if (userX !== null && userY !== null) {
+        ctx.save();
+        // Rotate map by -heading so that the fixed arrow (drawn at the center) always points up.
+        let rotationAngle =  (heading - 110) * Math.PI / 180;
+        ctx.translate(canvas.width/2, canvas.height/2);
+        ctx.rotate(rotationAngle);
+        // Translate so that the user's world coordinate appears at the center.
+        ctx.translate(-userX, -userY);
+        drawFloorPlan();
+        // Draw trajectory (in world coordinates)
+        if (trajectoryPoints.length > 1) {
+          ctx.beginPath();
+          ctx.strokeStyle = "red";
+          ctx.lineWidth = 2;
+          trajectoryPoints.forEach((pt, idx) => {
+            if (idx === 0) ctx.moveTo(pt.x, pt.y);
+            else ctx.lineTo(pt.x, pt.y);
+          });
+          ctx.stroke();
+        }
+        ctx.restore();
+      } else {
+        drawFloorPlan();
+      }
+      
+      // Draw a fixed arrow at the canvas center that always points upward.
+      drawArrowAtCenter();
+    }
+    
+    function drawArrowAtCenter() {
+      const centerX = canvas.width/2;
+      const centerY = canvas.height/2;
+      const arrowLen = 15;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(centerX, centerY - arrowLen);
+      ctx.strokeStyle = "blue";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(centerX, centerY - arrowLen);
+      ctx.lineTo(centerX - 5, centerY - arrowLen + 5);
+      ctx.lineTo(centerX + 5, centerY - arrowLen + 5);
+      ctx.closePath();
+      ctx.fillStyle = "blue";
+      ctx.fill();
+      ctx.restore();
+    }
+    
+    /********************************************************
+     * 4) EVENT LISTENERS
+     ********************************************************/
+    
+    // A) When the floor plan image loads, draw the map.
+    floorPlan.onload = function() {
+      drawEverything();
+    };
+    
+    // B) Click canvas to set starting position.
+    canvas.addEventListener("click", (e) => {
+      const rect = canvas.getBoundingClientRect();
+      userX = e.clientX - rect.left;
+      userY = e.clientY - rect.top;
+      trajectoryPoints = [];
+      trajectoryPoints.push({ x: userX, y: userY });
+      stepCount = 0;
+      drawEverything();
+    });
+    
+    // C) Device orientation: update sensor heading.
+    window.addEventListener("deviceorientation", (event) => {
+      const rawHeading = event.alpha || 0;
+      heading = headingKF.filter(rawHeading);
+      document.getElementById("headingDeg").innerText = heading.toFixed(2);
+      drawEverything();
+    });
+    
+    // D) Device motion: step detection and update movement.
+    window.addEventListener("devicemotion", (event) => {
+      if (userX === null || userY === null) return;
+      
+      const rawX = event.accelerationIncludingGravity.x || 0;
+      const rawY = event.accelerationIncludingGravity.y || 0;
+      const rawZ = event.accelerationIncludingGravity.z || 0;
+      
+      gravityX = alpha * gravityX + (1 - alpha) * rawX;
+      gravityY = alpha * gravityY + (1 - alpha) * rawY;
+      gravityZ = alpha * gravityZ + (1 - alpha) * rawZ;
+      
+      const linX = rawX - gravityX;
+      const linY = rawY - gravityY;
+      const linZ = rawZ - gravityZ;
+      
+      const magnitude = Math.sqrt(linX*linX + linY*linY + linZ*linZ);
+      motionBuffer.push(magnitude);
+      if (motionBuffer.length > motionBufferSize) motionBuffer.shift();
+      const stdDev = computeStdDev(motionBuffer);
+      isStationary = (stdDev < stationaryStdDevThreshold);
+      
+      const now = performance.now();
+      if (!isStationary) {
+        if (!peakDetected && magnitude > stepThresholdHigh) {
+          peakDetected = true;
+        } else if (peakDetected && magnitude < stepThresholdLow) {
+          if (now - lastPeakTime > minStepInterval) {
+            stepCount++;
+            document.getElementById("stepsCount").innerText = stepCount;
+            const stepPx = stepLengthMeters * pixelsPerMeter;
+            // Use sensor heading for movement.
+            // To make the displacement appear "forward" in the rotated view,
+            // we update world coordinates as follows:
+            // When heading = 0 (north): move upward => userY decreases.
+            // When heading = 90 (east): move right => userX increases.
+            // Thus, update: dx = stepPx * sin(heading) and dy = - stepPx * cos(heading).
+            const rad = (heading - 110 ) * Math.PI / 180;
+            userX += - stepPx * Math.sin(rad);
+            userY += - stepPx * Math.cos(rad);
+            trajectoryPoints.push({ x: userX, y: userY });
+            document.getElementById("offsetX").innerText = userX.toFixed(1);
+            document.getElementById("offsetY").innerText = userY.toFixed(1);
+            lastPeakTime = now;
+          }
+          peakDetected = false;
+        }
+      }
+      
+      document.getElementById("accX").innerText = linX.toFixed(2);
+      document.getElementById("accY").innerText = linY.toFixed(2);
+      document.getElementById("accZ").innerText = linZ.toFixed(2);
+      document.getElementById("status").innerText = isStationary ? "Stationary (No real steps)." : "Moving...";
+      drawEverything();
+    });
+    
+    // E) Reset button: clear starting position, trajectory, and steps.
+    document.getElementById("resetBtn").addEventListener("click", () => {
+      userX = null;
+      userY = null;
+      stepCount = 0;
+      trajectoryPoints = [];
+      peakDetected = false;
+      lastPeakTime = 0;
+      motionBuffer = [];
+      isStationary = true;
+      document.getElementById("stepsCount").innerText = "0";
+      document.getElementById("offsetX").innerText = "0";
+      document.getElementById("offsetY").innerText = "0";
+      drawEverything();
+    });
+    
+    document.getElementById("status").innerText = "Waiting for sensor data...";
+
+
+  </script>
 </body>
 </html>
