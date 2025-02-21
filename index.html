@@ -68,8 +68,8 @@
     <div id="info">
       1) Click on the floor plan to set your
       <strong>starting position</strong>.<br />
-      2) Your cursor (arrow) always points upward while the map auto-rotates
-      based on your device's heading (like Google Maps).<br />
+      2) Your navigation icon always stays fixed (pointing upward) while the map
+      auto-rotates based on your device's heading.<br />
       3) Steps move you forward along the direction of the arrow.
     </div>
 
@@ -81,21 +81,26 @@
       <p><strong>Steps:</strong> <span id="stepsCount">0</span></p>
       <p><strong>Sensor Heading:</strong> <span id="headingDeg">0</span>°</p>
       <p>
-        <strong>User Offset (World coords):</strong> X=<span id="offsetX"
-          >0</span
-        >, Y=<span id="offsetY">0</span>
+        <strong>User Offset (World coords):</strong> X=<span id="offsetX">0</span>,
+        Y=<span id="offsetY">0</span>
       </p>
       <p>
         <strong>Acceleration (Filtered):</strong> X=<span id="accX">0</span>,
         Y=<span id="accY">0</span>, Z=<span id="accZ">0</span>
       </p>
       <button id="resetBtn">Reset</button>
+      <!-- Zoom controls -->
+      <button id="zoomInBtn">Zoom In</button>
+      <button id="zoomOutBtn">Zoom Out</button>
       <div id="status">Waiting for sensor data...</div>
     </div>
 
     <!-- Kalman filter library for smoothing orientation -->
     <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
     <script>
+      // Global zoom factor
+      let zoomFactor = 1.0;
+
       // Request motion permission (for iOS)
       function requestMotionPermission() {
         if (typeof DeviceMotionEvent.requestPermission === 'function') {
@@ -170,9 +175,7 @@
       let minStepInterval = 500;
 
       // Gravity for high-pass filtering
-      let gravityX = 0,
-        gravityY = 0,
-        gravityZ = 0;
+      let gravityX = 0, gravityY = 0, gravityZ = 0;
       const alpha = 0.9;
 
       // Stationary detection
@@ -184,8 +187,7 @@
       function computeStdDev(arr) {
         if (!arr.length) return 0;
         const mean = arr.reduce((a, b) => a + b, 0) / arr.length;
-        const variance =
-          arr.reduce((sum, val) => sum + (val - mean) ** 2, 0) / arr.length;
+        const variance = arr.reduce((sum, val) => sum + (val - mean) ** 2, 0) / arr.length;
         return Math.sqrt(variance);
       }
 
@@ -195,12 +197,15 @@
       function drawEverything() {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-        // If a starting position is set, we rotate the map so that the fixed arrow remains upward.
+        // If a starting position is set, rotate and zoom the map so the user location appears at the center.
         if (userX !== null && userY !== null) {
           ctx.save();
-          // Rotate map by -heading so that the fixed arrow (drawn at the center) always points up.
-          let rotationAngle = ((heading - 120) * Math.PI) / 180;
+          // Move to the canvas center.
           ctx.translate(canvas.width / 2, canvas.height / 2);
+          // Apply zoom.
+          ctx.scale(zoomFactor, zoomFactor);
+          // Rotate the map so that the navigation icon remains oriented upward.
+          let rotationAngle = ((heading - 120) * Math.PI) / 180;
           ctx.rotate(rotationAngle);
           // Translate so that the user's world coordinate appears at the center.
           ctx.translate(-userX, -userY);
@@ -221,25 +226,30 @@
           drawFloorPlan();
         }
 
-        // Draw a fixed arrow at the canvas center that always points upward.
-        drawArrowAtCenter();
+        // Draw the navigation icon at the center (fixed cursor)
+        drawNavigationIcon();
       }
 
-      function drawArrowAtCenter() {
+      // Draw a navigation icon similar to location indicators in mapping apps.
+      function drawNavigationIcon() {
         const centerX = canvas.width / 2;
         const centerY = canvas.height / 2;
-        const arrowLen = 15;
+        const radius = 12;
         ctx.save();
+        // Draw outer circle with white fill and blue border.
         ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        ctx.lineTo(centerX, centerY - arrowLen);
-        ctx.strokeStyle = 'blue';
+        ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+        ctx.fillStyle = 'white';
+        ctx.fill();
         ctx.lineWidth = 2;
+        ctx.strokeStyle = 'blue';
         ctx.stroke();
+
+        // Draw an inner triangle (arrow) pointing upward.
         ctx.beginPath();
-        ctx.moveTo(centerX, centerY - arrowLen);
-        ctx.lineTo(centerX - 5, centerY - arrowLen + 5);
-        ctx.lineTo(centerX + 5, centerY - arrowLen + 5);
+        ctx.moveTo(centerX, centerY - radius + 3);
+        ctx.lineTo(centerX - 7, centerY + 4);
+        ctx.lineTo(centerX + 7, centerY + 4);
         ctx.closePath();
         ctx.fillStyle = 'blue';
         ctx.fill();
@@ -252,34 +262,41 @@
       const locationConfig = {
         475: { x: 258, y: 997 },
         476: { x: 278, y: 997 },
-        477: { x: 298, y: 997 },
+        477: { x: 298, y: 997 }
         // Add more seat mappings as needed.
       };
 
-      document
-        .getElementById('setLocationBtn')
-        .addEventListener('click', function () {
-          const selectedValue = document.getElementById('locationInput').value;
-          if (locationConfig.hasOwnProperty(selectedValue)) {
-            userX = locationConfig[selectedValue].x;
-            userY = locationConfig[selectedValue].y;
-            trajectoryPoints = [];
-            // trajectoryPoints.push({ x: userX, y: userY });
-            stepCount = 0;
-            document.getElementById('stepsCount').innerText = stepCount;
-            document.getElementById('offsetX').innerText = userX.toFixed(1);
-            document.getElementById('offsetY').innerText = userY.toFixed(1);
-            const canvas = document.getElementById('floorCanvas');
-            const ctx = canvas.getContext('2d');
-            ctx.scale(1.2, 1.2); // Reset zoom transformation
-            drawEverything();
-          } else {
-            alert('Location not found. Please select a valid seat number.');
-          }
-        });
+      document.getElementById('setLocationBtn').addEventListener('click', function () {
+        const selectedValue = document.getElementById('locationInput').value;
+        if (locationConfig.hasOwnProperty(selectedValue)) {
+          userX = locationConfig[selectedValue].x;
+          userY = locationConfig[selectedValue].y;
+          trajectoryPoints = [];
+          stepCount = 0;
+          document.getElementById('stepsCount').innerText = stepCount;
+          document.getElementById('offsetX').innerText = userX.toFixed(1);
+          document.getElementById('offsetY').innerText = userY.toFixed(1);
+          drawEverything();
+        } else {
+          alert('Location not found. Please select a valid seat number.');
+        }
+      });
 
       /********************************************************
-       * 5) EVENT LISTENERS
+       * 5) ZOOM CONTROLS
+       ********************************************************/
+      document.getElementById('zoomInBtn').addEventListener('click', function () {
+        zoomFactor *= 1.1; // Increase zoom by about 10%
+        drawEverything();
+      });
+
+      document.getElementById('zoomOutBtn').addEventListener('click', function () {
+        zoomFactor /= 1.1; // Decrease zoom by about 10%
+        drawEverything();
+      });
+
+      /********************************************************
+       * 6) EVENT LISTENERS
        ********************************************************/
       // A) When the floor plan image loads, draw the map.
       floorPlan.onload = function () {
@@ -288,12 +305,10 @@
 
       // B) Click canvas to set starting position.
       canvas.addEventListener('click', (e) => {
-        ctx.scale(1, 1); // Zoom transformation applied here
         const rect = canvas.getBoundingClientRect();
         userX = e.clientX - rect.left;
         userY = e.clientY - rect.top;
         trajectoryPoints = [];
-        // trajectoryPoints.push({ x: userX, y: userY });
         stepCount = 0;
         drawEverything();
       });
@@ -337,16 +352,10 @@
               stepCount++;
               document.getElementById('stepsCount').innerText = stepCount;
               const stepPx = stepLengthMeters * pixelsPerMeter;
-              // Use sensor heading for movement.
-              // To make the displacement appear "forward" in the rotated view,
-              // we update world coordinates as follows:
-              // When heading = 0 (north): move upward => userY decreases.
-              // When heading = 90 (east): move right => userX increases.
-              // Thus, update: dx = stepPx * sin(heading) and dy = - stepPx * cos(heading).
+              // Calculate movement based on sensor heading.
               const rad = ((heading - 120) * Math.PI) / 180;
               userX += -stepPx * Math.sin(rad);
               userY += -stepPx * Math.cos(rad);
-              // trajectoryPoints.push({ x: userX, y: userY });
               document.getElementById('offsetX').innerText = userX.toFixed(1);
               document.getElementById('offsetY').innerText = userY.toFixed(1);
               lastPeakTime = now;
@@ -380,8 +389,7 @@
         drawEverything();
       });
 
-      document.getElementById('status').innerText =
-        'Waiting for sensor data...';
+      document.getElementById('status').innerText = 'Waiting for sensor data...';
     </script>
   </body>
 </html>
