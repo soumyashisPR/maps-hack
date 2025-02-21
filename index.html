@@ -209,8 +209,8 @@
         const centerX = canvas.width / 2;
         const centerY = canvas.height / 2;
         // Define desired icon size (adjust as needed)
-        const iconWidth = 50;
-        const iconHeight = 50;
+        const iconWidth = 60;
+        const iconHeight = 60;
         ctx.drawImage(navIcon, centerX - iconWidth / 2, centerY - iconHeight / 2, iconWidth, iconHeight);
       }
 
@@ -233,6 +233,7 @@
           document.getElementById('stepsCount').innerText = stepCount;
           document.getElementById('offsetX').innerText = userX.toFixed(1);
           document.getElementById('offsetY').innerText = userY.toFixed(1);
+          ctx.scale(1.4,1.4);
           drawEverything();
         } else {
           alert('Location not found. Please select a valid seat number.');
