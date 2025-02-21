@@ -152,7 +152,7 @@
       let trajectoryPoints = [];
       let stepCount = 0;
       const stepLengthMeters = 0.7;
-      const pixelsPerMeter = 15;
+      const pixelsPerMeter = 18;
       let stepThresholdHigh = 1.5;
       let stepThresholdLow = 0.7;
       let peakDetected = false;
@@ -182,7 +182,7 @@
           ctx.save();
           ctx.translate(canvas.width / 2, canvas.height / 2);
           ctx.scale(zoomFactor, zoomFactor);
-          let rotationAngle = ((heading - 120) * Math.PI) / 180;
+          let rotationAngle = ((heading - 118) * Math.PI) / 180;
           ctx.rotate(rotationAngle);
           ctx.translate(-userX, -userY);
           drawFloorPlan();
@@ -301,7 +301,7 @@
               stepCount++;
               document.getElementById('stepsCount').innerText = stepCount;
               const stepPx = stepLengthMeters * pixelsPerMeter;
-              const rad = ((heading - 120) * Math.PI) / 180;
+              const rad = ((heading - 118) * Math.PI) / 180;
               userX += -stepPx * Math.sin(rad);
               userY += -stepPx * Math.cos(rad);
               document.getElementById('offsetX').innerText = userX.toFixed(1);
