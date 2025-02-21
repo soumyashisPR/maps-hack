@@ -14,6 +14,10 @@
     h1 {
       margin: 0.5em 0 0.2em;
     }
+    #locationSelect {
+      margin: 0.5em 0;
+      font-size: 1em;
+    }
     #info {
       margin-bottom: 0.5em;
       font-size: 0.9em;
@@ -42,6 +46,20 @@
 </head>
 <body>
   <h1>Floor Plan Live Tracking</h1>
+  
+  <!-- New Location Selector -->
+  <div id="locationSelect">
+    <label for="locationInput">Select Starting Location:</label>
+    <input id="locationInput" type="text" list="locationOptions" placeholder="Type seat number..."/>
+    <datalist id="locationOptions">
+      <option value="477"></option>
+      <option value="478"></option>
+      <option value="479"></option>
+      <!-- Add more options as needed -->
+    </datalist>
+    <button id="setLocationBtn">Set Location</button>
+  </div>
+
   <div id="info">
     1) Click on the floor plan to set your <strong>starting position</strong>.<br/>
     2) Your cursor (arrow) always points upward while the map auto-rotates based on your device's heading (like Google Maps).<br/>
@@ -71,39 +89,39 @@
   <!-- Kalman filter library for smoothing orientation -->
   <script src="https://cdn.jsdelivr.net/npm/kalmanjs"></script>
   <script>
-
+    // Request motion permission (for iOS)
     function requestMotionPermission() {
-            if (typeof DeviceMotionEvent.requestPermission === "function") {
-                DeviceMotionEvent.requestPermission()
-                    .then(permissionState => {
-                        if (permissionState === "granted") {
-                            document.getElementById("status").innerText = "Motion sensors enabled!";
-                        } else {
-                            document.getElementById("status").innerText = "Permission denied.";
-                        }
-                    })
-                    .catch(error => {
-                        document.getElementById("status").innerText = "Error: " + error;
-                    });
+      if (typeof DeviceMotionEvent.requestPermission === "function") {
+        DeviceMotionEvent.requestPermission()
+          .then(permissionState => {
+            if (permissionState === "granted") {
+              document.getElementById("status").innerText = "Motion sensors enabled!";
             } else {
-                // Non-iOS devices don't require permission
-                document.getElementById("status").innerText = "Motion sensors active!";
+              document.getElementById("status").innerText = "Permission denied.";
             }
-        }
+          })
+          .catch(error => {
+            document.getElementById("status").innerText = "Error: " + error;
+          });
+      } else {
+        // Non-iOS devices don't require permission
+        document.getElementById("status").innerText = "Motion sensors active!";
+      }
+    }
 
     // Try auto-request on load
     window.onload = function () {
-            if (typeof DeviceMotionEvent.requestPermission === "function") {
-                // iOS requires a user interaction, add a button dynamically
-                let btn = document.createElement("button");
-                btn.innerText = "Enable Motion Sensors";
-                btn.onclick = requestMotionPermission;
-                document.body.appendChild(btn);
-            } else {
-                // Non-iOS, start motion tracking immediately
-                requestMotionPermission();
-            }
-        };
+      if (typeof DeviceMotionEvent.requestPermission === "function") {
+        // iOS requires a user interaction, add a button dynamically
+        let btn = document.createElement("button");
+        btn.innerText = "Enable Motion Sensors";
+        btn.onclick = requestMotionPermission;
+        document.body.appendChild(btn);
+      } else {
+        // Non-iOS, start motion tracking immediately
+        requestMotionPermission();
+      }
+    };
 
     /********************************************************
      * 1) LOAD THE FLOOR PLAN IMAGE INTO THE CANVAS
@@ -163,7 +181,6 @@
      ********************************************************/
     function drawEverything() {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.scale(1, 1); // Zoom transformation applied here
 
       // If a starting position is set, we rotate the map so that the fixed arrow remains upward.
       if (userX !== null && userY !== null) {
@@ -217,9 +234,35 @@
     }
     
     /********************************************************
-     * 4) EVENT LISTENERS
+     * 4) HARD CODED LOCATION CONFIG & LOCATION SELECT EVENT
      ********************************************************/
+    const locationConfig = {
+      "477": { x: 200, y: 300 },
+      "478": { x: 400, y: 500 },
+      "479": { x: 600, y: 700 }
+      // Add more seat mappings as needed.
+    };
+
+    document.getElementById("setLocationBtn").addEventListener("click", function() {
+      const selectedValue = document.getElementById("locationInput").value;
+      if (locationConfig.hasOwnProperty(selectedValue)) {
+        userX = locationConfig[selectedValue].x;
+        userY = locationConfig[selectedValue].y;
+        trajectoryPoints = [];
+        trajectoryPoints.push({ x: userX, y: userY });
+        stepCount = 0;
+        document.getElementById("stepsCount").innerText = stepCount;
+        document.getElementById("offsetX").innerText = userX.toFixed(1);
+        document.getElementById("offsetY").innerText = userY.toFixed(1);
+        drawEverything();
+      } else {
+        alert("Location not found. Please select a valid seat number.");
+      }
+    });
     
+    /********************************************************
+     * 5) EVENT LISTENERS
+     ********************************************************/
     // A) When the floor plan image loads, draw the map.
     floorPlan.onload = function() {
       drawEverything();
@@ -227,6 +270,7 @@
     
     // B) Click canvas to set starting position.
     canvas.addEventListener("click", (e) => {
+      ctx.scale(1, 1); // Zoom transformation applied here
       const rect = canvas.getBoundingClientRect();
       userX = e.clientX - rect.left;
       userY = e.clientY - rect.top;
@@ -317,8 +361,6 @@
     });
     
     document.getElementById("status").innerText = "Waiting for sensor data...";
-
-
   </script>
 </body>
 </html>
