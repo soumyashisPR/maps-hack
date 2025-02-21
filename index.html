@@ -249,7 +249,7 @@
         userX = locationConfig[selectedValue].x;
         userY = locationConfig[selectedValue].y;
         trajectoryPoints = [];
-        trajectoryPoints.push({ x: userX, y: userY });
+        // trajectoryPoints.push({ x: userX, y: userY });
         stepCount = 0;
         document.getElementById("stepsCount").innerText = stepCount;
         document.getElementById("offsetX").innerText = userX.toFixed(1);
@@ -275,7 +275,7 @@
       userX = e.clientX - rect.left;
       userY = e.clientY - rect.top;
       trajectoryPoints = [];
-      trajectoryPoints.push({ x: userX, y: userY });
+      // trajectoryPoints.push({ x: userX, y: userY });
       stepCount = 0;
       drawEverything();
     });
@@ -328,7 +328,7 @@
             const rad = (heading - 110 ) * Math.PI / 180;
             userX += - stepPx * Math.sin(rad);
             userY += - stepPx * Math.cos(rad);
-            trajectoryPoints.push({ x: userX, y: userY });
+            // trajectoryPoints.push({ x: userX, y: userY });
             document.getElementById("offsetX").innerText = userX.toFixed(1);
             document.getElementById("offsetY").innerText = userY.toFixed(1);
             lastPeakTime = now;
